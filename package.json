@@ -1,0 +1,30 @@
+{
+  "name": "qoper8-cp",
+  "version": "4.0.0",
+  "config": {
+    "date": "16 August 2022"
+  },
+  "description": "Child Process Pool Management Utility for Node.js",
+  "main": "./src/QOper8.js",
+  "type": "module",
+  "exports": {
+    ".": "./src/QOper8.js",
+    "./benchmark": "./benchmark/qoper8-cp-benchmark.js"
+  },
+  "scripts": {
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robtweed/qoper8-cp.git"
+  },
+  "author": "Rob Tweed, M/Gateway Developments Ltd",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/robtweed/qoper8-cp/issues"
+  },
+  "homepage": "https://github.com/robtweed/qoper8-cp#readme",
+  "dependencies": {
+    "double-ended-queue": "",
+    "uuid": ""
+  }
+}
