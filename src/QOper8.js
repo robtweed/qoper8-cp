@@ -23,7 +23,7 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-16 August 2022
+23 August 2022
 
  */
 
@@ -37,7 +37,9 @@ import { v4 as uuidv4 } from 'uuid';
 let workerCode = `
 
 process.on( 'SIGINT', function() {
-  console.log('Child Process ' + process.pid + ' detected SIGINT (Ctrl-C) - ignored');
+  if (process && process.pid) {
+    console.log('Child Process ' + process.pid + ' detected SIGINT (Ctrl-C) - ignored');
+  }
 });
 
 let QWorker = class {
@@ -67,7 +69,7 @@ let QWorker = class {
           shutdown: true
         }
       };
-      clearInterval(QOper8Worker.timer);
+      if (timer) clearInterval(timer);
       process.send(obj);
       q.emit('shutdown_signal_sent');
     }
@@ -220,7 +222,8 @@ let QWorker = class {
         });
       }
 
-      let dispObj = JSON.parse(JSON.stringify(obj));
+      let dispObj = {...obj};
+      //let dispObj = JSON.parse(JSON.stringify(obj));
       delete obj.qoper8.uuid;
       delete dispObj.qoper8;
       q.log('Message received by worker ' + id + ': ' + JSON.stringify(dispObj, null, 2));
@@ -259,10 +262,14 @@ let QWorker = class {
             catch(err) {
               error = 'Unable to load Handler module ' + handlerObj.module;
               q.log(error);
-              q.log(err);
-              q.emit('error', error);
+              q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
+              q.emit('error', {
+                error: error,
+                caughtError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+              });
               return finished({
                 error: error,
+                 caughtError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
                 originalMessage: dispObj,
                 workerId: id
               });
@@ -274,15 +281,27 @@ let QWorker = class {
         noOfMessages++;
         let handler = handlers.get(obj.type);
         try {
-          handler.call(q, obj, finished);
+          let ctx = {...q};
+          ctx.id = id;
+          handler.call(ctx, obj, finished);
         }
         catch(err) {
           error = 'Error running Handler Method for type ' + obj.type;
           q.log(error);
-          q.log(err);
-          q.emit('error', error);
+          q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
+          q.emit('error', {
+            error: error,
+            caughtError: JSON.stringify(err, Object.getOwnPropertyNames(err))
+          });
+
+          // return the error and also signal that child process should be terminated
+          //  to avoid any lasting side effects within the process due to the defective handler
+
+          if (timer) clearInterval(timer);
           return finished({
             error: error,
+            caughtError: JSON.stringify(err, Object.getOwnPropertyNames(err)),
+            shutdown: true,
             originalMessage: dispObj,
             workerId: id
           });
@@ -338,14 +357,24 @@ class QOper8 {
     if (obj.workerInactivityLimit) obj.workerInactivityLimit = obj.workerInactivityLimit * 60000;
 
     this.name = 'QOper8-cp';
-    this.build = '4.0';
-    this.buildDate = '16 August 2022';
+    this.build = '4.1';
+    this.buildDate = '23 August 2022';
     this.logging = obj.logging || false;
     let poolSize = +obj.poolSize || 1;
     let maxPoolSize = obj.maxPoolSize || 32;
     if (poolSize > maxPoolSize) poolSize = maxPoolSize;
     let inactivityCheckInterval = obj.workerInactivityCheckInterval || 60000;
     let inactivityLimit = obj.workerInactivityLimit || (20 * 60000);
+    let handlerTimeout = obj.handlerTimeout || false;
+    let handlerTimers = new Map();
+
+    // QBackup, if present, must be an object
+    //  with two functions: add and remove
+    //    add(messageNo, requestObj)
+    //    delete(messageNo)
+
+    let QBackup = obj.QBackup || false;
+
     let workerModulePath = obj.workerModulePath || './QOper8Worker.js';
 
     fs.writeFileSync(workerModulePath, workerCode);
@@ -390,7 +419,7 @@ class QOper8 {
     let uuid = uuidv4();
     let workers = new Map();
     let isAvailable = new Map();
-    let callbacks = new Map();
+    let pendingRequests = new Map();
     let maxQLength = obj.maxQLength || 20000;
     let queue = new deq(maxQLength);
     let nextWorkerId = 0;
@@ -430,10 +459,52 @@ class QOper8 {
     function sendMessageToWorker(worker) {
       if (queue.isEmpty()) return;
       let requestObj = queue.shift();
-      let id = worker.id;
-      callbacks.set(id, requestObj.qoper8.callback);
+      let id = +worker.id;
+      let pendingRecord = {
+        messageNo: requestObj.qoper8.messageNo,
+        request: requestObj,
+        callback: requestObj.qoper8.callback
+      };
+      pendingRequests.set(id, pendingRecord);
       delete requestObj.qoper8.callback;
-      isAvailable.set(+id, false);
+      delete requestObj.qoper8.messageNo;
+      isAvailable.set(id, false);
+
+      if (handlerTimeout) {
+        let timer = setTimeout(function() {
+
+          // return an error to the waiting request promise
+          //  include the original request, so it can be re-queued if desired
+
+          // terminate the Child Process as there's probably something wrong with it
+
+          removeFromQBackup(id);
+
+          if (pendingRequests.has(id)) {
+            let pendingRecord = pendingRequests.get(id);
+            let callback = pendingRecord.callback;
+            let requestObj = pendingRecord.request;
+            delete requestObj.qoper8;
+            let res = {
+              error: 'Child Process handler timeout exceeded',
+              originalRequest: requestObj
+            };
+            if (callback) callback(res, id);
+            pendingRequests.delete(id);
+            handlerTimers.delete(id);
+            // send shutdown signal to child process to ensure it
+            // stops its timer
+
+            sendMessage({
+              type: 'qoper8_terminate'
+            }, worker);
+
+          }
+
+        },handlerTimeout);
+        handlerTimers.set(id, timer);
+      } 
+
       sendMessage(requestObj, worker);
       q.emit('sentToWorker', {
         message: requestObj,
@@ -447,6 +518,42 @@ class QOper8 {
       worker.send(msg);
     }
 
+    function addToQBackup(requestObj) {
+      let messageNo = requestObj.qoper8.messageNo;
+      let req = {...requestObj};
+      delete req.qoper8;
+      q.emit('QBackupAdd', {
+        id: messageNo,
+        requestObject: req
+      });
+      if (QBackup && typeof QBackup.add === 'function') {
+        try {
+          QBackup.add(messageNo, req);
+        }
+        catch(err) {
+          q.log("Error executing QBackup add method");
+          q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
+        }
+      }
+    }
+
+    function removeFromQBackup(workerId) {
+      if (pendingRequests.has(workerId)) {
+        let pendingRecord = pendingRequests.get(workerId);
+        let originalMessageNo = pendingRecord.messageNo;
+        q.emit('QBackupDelete', originalMessageNo);
+        if (QBackup && typeof QBackup.delete === 'function') {
+          try {
+            QBackup.delete(originalMessageNo);
+          }
+          catch(err) {
+            q.log("Error running QBackup delete function");
+            q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
+          }
+        }
+      }
+    }
+
     function startWorker() {
 
       let worker = fork(workerModulePath, undefined, {
@@ -454,6 +561,8 @@ class QOper8 {
       });
 
       worker.on("message", function(res) {
+
+        let id = +worker.id;
 
         if (res.qoper8 && res.qoper8.init) {
           initialised = true;
@@ -465,33 +574,100 @@ class QOper8 {
 
         q.emit('replyReceived', {
           reply: dispRes,
-          workerId: worker.id
+          workerId: id
         });
 
-        q.log('response received from Worker: ' + worker.id);
+        q.log('response received from Worker: ' + id);
         q.log(JSON.stringify(dispRes, null, 2));
 
-        if (callbacks.has(worker.id)) {
-          let callback = callbacks.get(worker.id);
-          if (callback) callback(res, worker.id);
-          callbacks.delete(worker.id);
+        if (pendingRequests.has(id)) {
+          let pendingRecord = pendingRequests.get(id);
+          let callback = pendingRecord.callback;
+          if (callback) callback(res, id);
         }
 
         if (res.qoper8) {
           if (res.qoper8.finished) {
-            q.emit('worker' + worker.id + 'Available');
-            q.emit('worker' + worker.id + 'Response', res);
-            isAvailable.set(+worker.id, true);
+            q.emit('worker' + id + 'Available');
+            q.emit('worker' + id + 'Response', res);
+            clearTimeout(handlerTimers.get(id));
+
+            removeFromQBackup(id);
+
+            // If a handler logic error has been returned, stop the Child Process to
+            //  prevent unwanted side effects
+
+            if (res.error && res.shutdown) {
+              workers.delete(id);
+              isAvailable.delete(id);
+              pendingRequests.delete(id);
+              handlerTimers.delete(id)
+              q.emit('worker' + id + 'Terminated');
+              worker.kill();
+              if (!stopped) processQueue();
+              return;
+            }
+
+            // get rid of the pending request as it's been successfully handled
+
+            pendingRequests.delete(id);
+            isAvailable.set(id, true);
+            handlerTimers.delete(id)
+
             if (!stopped) processQueue();
           }
           else if (res.qoper8.shutdown) {
-            q.log('QOper8 is shutting down Child Process ' + worker.id);
-            workers.delete(worker.id);
-            q.emit('worker' + worker.id + 'Terminated');
+            q.log('QOper8 is shutting down Child Process ' + id);
+            workers.delete(id);
+            isAvailable.delete(id);
+            pendingRequests.delete(id);
+            handlerTimers.delete(id)
+            q.emit('worker' + id + 'Terminated');
             worker.kill();
           }
         }
       });
+
+      worker.on('exit', function(exitCode) {
+        // make sure any failed workers are removed from the worker, 
+        //  available and other worker-related maps
+
+        let id = +worker.id;
+        q.log('Child Process ' + id + ' has stopped with exitCode ' + exitCode);
+        workers.delete(id);
+        isAvailable.delete(id);
+        if (handlerTimers.has(id)) {
+          let timer = handlerTimers.get(id)
+          clearTimeout(timer);
+          handlerTimers.delete(id);
+        }
+
+        removeFromQBackup(id);
+
+        // if there's a promise waiting for a response, return an error
+        //  and the original request, so user can decide whether or not to requeue
+        //  the message
+
+        // then shut down the worker
+
+        if (pendingRequests.has(id)) {
+          let pendingRecord = pendingRequests.get(id);
+          let callback = pendingRecord.callback;
+          let requestObj = pendingRecord.request;
+          if (requestObj) {
+            delete requestObj.qoper8;
+            let res = {
+              error: 'Child Process has shut down unexpectedly',
+              originalRequest: requestObj
+            };
+            q.emit('childProcessExit', requestObj);
+            callback(res, id);
+          }
+          pendingRequests.delete(id);
+        }
+        processQueue();
+      });
+
 
       worker.id = nextWorkerId++;
       let msg = {
@@ -519,7 +695,9 @@ class QOper8 {
         return;
       }
       noOfMessages++;
+      obj.qoper8.messageNo = noOfMessages;
       queue.push(obj);
+      addToQBackup(obj);
       q.emit('addedToQueue', obj);
       processQueue();
     }

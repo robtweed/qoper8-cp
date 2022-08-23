@@ -16,6 +16,8 @@ Node.js applications.
 *QOper8-cp* allows you to define a pool of Child Processes, to which messages that you create are automatically
 dispatched and handled.  *QOper8-cp* manages the Child Process pool for you automatically, bringing them into play and closing them down based on demand.  *QOper8-cp* allows you to determine how long a Child Process process will persist.
 
+*Qoper8-cp* makes use of the standard Node.js Child Process APIs, and uses its standard *send()* API for communication between the main QOper8 process and each Child Process.  No other networking APIs or technologies are involved, and no external network traffic is conducted within *QOper8-cp*'s logic.
+
 *Note*: The *QOper8-cp* module closely follows the pattern and APIs of the 
 [*QOper8-wt*](https://github.com/robtweed/qoper8-wt) Worker Thread pool manager and also the browser-based 
 [*QOper8-ww*](https://github.com/robtweed/QOper8) module for WebWorker pool management. 
@@ -66,8 +68,11 @@ You start and configure *QOper8-cp* by creating an instance of the *QOper8* clas
 
 - *logging*: if set to *true*, *QOper8-cp* will generate console.log messages for each of its critical processing steps within both the main process and every Child Process process.  This is useful for debugging during development.  If not specified, it is set to *false*.
 
--*exitOnStop*: if set to *true* and if you invoke the *stop()* API (see later), QOper8-cp will invoke a *process.exit()* command.  By default, QOper8 will remain running even when stopped (although it will deactivate its queue when stopped).
+- *exitOnStop*: if set to *true* and if you invoke the *stop()* API (see later), QOper8-cp will invoke a *process.exit()* command.  By default, QOper8 will remain running even when stopped (although it will deactivate its queue when stopped).
 
+- *handlerTimeout*: Optional property allowing you to specify the length of time (in milliseconds) that the QOper8 main process will wait for a response from a Child Process.  If a *handlerTimeout* is specified and it is exceeded (eg due to a handler method going wrong), then an error is returned and the Child Process is shut down.  See later for details.
+
+- *QBackup*: optional object that includes two functions for maintaining a backup queue (eg in a Redis key/value store), for critical systems where the resilience of the queue needs to be assured in the event of the main Node.js process crashing.  See later for details.
 
 You can optionally modify the parameters used by *QOper8-cp* for monitoring and shutting down inactive Child Process processes, by using the following *options* properties:
 
@@ -176,15 +181,27 @@ So, as you can see, everything related to the Child processes and the message fl
 
       export {handler};
 
-
-
 The structure and contents of the response object are up to you.  
 
-The *finished()* method is provided for you by the *QOper8-cp* Worker module.  It:
+The *this* context within your handler method has the following properties and methods that you may find useful:
 
-- returns the response object (specified as its argument) to the main *QOper8-cp* process
-- instructs the main *QOper8-cp* process that processing has completed in the Child Process, and, as a result, the Child Process is flagged as *available* for handling any new incoming/queued messages
-- finally tells *QOper8-cp* to process the first message in its queue (unless it's empty)
+- *id*: the Child Process Id, as allocated by the *QOper8-cp* main process
+- *send()*: the Child Process's send() method, allowing you to send intermediate messages back to the main *QOper8-cp* process (see later for details)
+- *on()*: allows you to handle events within your handler
+- *off()*: deletes an event handler
+- *emit()*: generates a custom event within your handler
+- *log()*: if logging is enabled in *QOper8-cp*, then a time-stamped *console.log()* message can be created using this method
+
+The *on()*, *off()*, *emit()* and *log()* methods are [described later in this document](#events).
+
+
+The second argument of your handler method - the *finished()* method - is provided for you by the *QOper8-cp* Worker module.  It is used to:
+
+- return the response object (specified as its argument) to the main *QOper8-cp* process
+- instruct the main *QOper8-cp* process that processing has completed in the Child Process, and, as a result, the Child Process is flagged as *available* for handling any new incoming/queued messages
+- tell *QOper8-cp* to process the first message in its queue (unless it's empty)
+
+Your handler **MUST** always invoke the *finished()* when completed, even if you have no response to return;  Failure to invoke the *finished()* method will leave the Child Process unavailable for use for handling other queued messages (unless a *handlerTimeout* was defined when instantiating *QOper8-cp*, in which case the Child Process will be terminated once this is exceeded).
 
 
 For example:
@@ -201,6 +218,33 @@ For example:
 
       };
       export {handler};
+
+If your handler method includes asynchronous logic, ensure that the *finished()* method is invoked only when your asynchronous logic has completed, otherwise the Child Process will be relased back to the available pool prematurely, eg:
+
+      let handler = function(obj, finished) {
+
+        // demonstration of how to handle asynchronous logic within your handler
+
+        setTimeout(function() {
+
+          finished({
+            processing: 'Message processing done!',
+            data: obj.data,
+            time: Date.now()
+          });
+        }, 3000);
+
+      };
+      export {handler};
+
+
+## How Many Message Type Handlers Can You Use?
+
+As many as you like!  Each Child Process will automatically and dynamically load and cache the handler methods you've specified as it receives incoming requests.  Each Child Process can therefore handle as many different message types as you wish.  
+
+You don't need separate Child Processes for handling different message types, and nor do you need multiple instances of *QOper8-cp* to handle different types of messages and traffic.
+
+Simply write your message handlers, tell *QOper8-cp* where to load them from and leave *QOper8-cp* to use them!
 
 
 ## Simple Example
@@ -354,9 +398,153 @@ It's entirely up to you.  Each Child Process in your pool will be able to invoke
 - If you use just a single Child Process, your queued messages will be handled individually, one at a time, in strict chronological sequence.  This can be advantageous for certain kinds of activity where you need strict control over the serialisation of activities.  The downside is that the overall throughput will be typically less than if you had a larger Child Process pool.
 
 
+## *QOper8-cp* Fault Resilience
+
+*QOper8-cp* is designed to be robust and allow you to control and handle unforseen events.
+
+### Handling Errors in Child Processes
+
+The most likely error you'll experience is where a Child Process Message Handler method has crashed due to some fault within its logic.  If this happens, *QOper8-cp* will:
+
+- return an error object to your awaiting *send()* Promise. This object also includes the original queued request object, allowing you to re-queue it and re-handle it if this is a sensible and/or feasible option for you.  For example, if you sent a request:
+
+
+      let res = await qoper8.send({
+        type: 'test',
+        hello: 'world'
+      });
+
+
+  If the message hander for a message of type *test* crashed, then *res* would be returned as:
+
+      {
+        "error": "Error running Handler Method for type test",
+        "caughtError": "{\"stack\":\"ReferenceError: y is not defined\\n...etc}",
+        "originalMessage": {
+          "type": "test",
+          "hello": "world"
+        },
+        "workerId": 0,
+        "qoper8": {
+          "finished": true
+        }
+      }
+
+  The *caughtError* is a stringified copy of the error caught by *QOper8-cp*'s *try..catch* around the handler that failed.  This should provide you with the information needed to debug the issue.
+
+  The original request object is returned to you under the *originalMessage* property.  It is up to you to decide what, if anything you want to do with it.
+
+  The *workerId* and *qoper8* properties are primarily for internal use within *QOper8-cp*.
+
+
+- *QOper8-cp* will terminate the Child Process in which the error occurred and remove it from *QOper8-cp*'s available pool.  This is to prevent any unwanted side-effects from any delayed asynchronous logic that may be running within the Child Process despite the error that occurred.  
+
+  Note that *QOper8-cp* will always automatically start new Child Processes if it needs to, and this, coupled with the fact that a *QOper8-cp* Child Process only ever handles a single message at a time, means that shutting down Child Processes is a safe thing for *QOper8-cp* to do.
+
+### Catering for a Handler that Never Completes
+
+By default, if your *QOper8-cp* Child Process handler method failed to complete (eg due to an infinite loop, or because it was hanging awaiting a resource that was unavailable), then that Child Process will remain unavailable to *QOper8-cp*.  This will reduce throughtput, and if the same situation occurs in other Child Processes, you could end up with a stalled system with no available Child Processes in your pool.
+
+To handle such situations, you should specify a *handlerTimeout* when instantiating *QOper8-cp*.  The *handlerTimeout* is specified in milliseconds, eg the following would instruct *QOper8-cp* to force a Child Process timeout if a handler took longer than a minute to return its results:
+
+      let qoper8 = new QOper8({
+        handlersByMessageType: new Map([
+          ['test', {module: './test.mjs'}]
+        ]),
+        poolSize: 2,
+        handlerTimeout: 60000
+      });
+
+
+If a handler method exceeds this timeout, *QOper8-cp* will:
+
+- return an error response to the awaiting *send()* Promise.  The error response object includes the original request object.  It is for you to determine what to do with the original request object, for example you may decide to re-queue it.
+
+  For example, if you sent a request:
+
+      let res = await qoper8.send({
+        type: 'test',
+        hello: 'world'
+      });
+
+and the *test* Message Handler method failed to respond within a minute, then the value of *res* that was returned would be: 
+
+
+      {
+        error: 'Child Process handler timeout exceeded',
+        originalRequest: {
+          type: 'test',
+          hello: 'world'
+        }
+      };
+
+- terminate the Child Process, effectively stopping any processing that was taking place in the Child Process.
+
+  Note that *QOper8-cp* will always automatically start new Child Processes if it needs to, and this, coupled with the fact that a *QOper8-cp* Child Process only ever handles a single message at a time, means that shutting down Child Processes is a safe thing for *QOper8-cp* to do.
+
+
+### Handling a Crash in the Main Node.js Process
+
+If the main Node.js process experiences an unforeseen crash, you will not only lose the currently executing Child Processes, but you'll also lose *QOper8-cp*'s queue since, for performance reasons, it is an in-memory array structure.
+
+Under most circumstances, the *QOper8-cp* queue should be empty, but in a busy system this may not be the case, and if you are running a safety-critical system, the resilience of the queue may be an important/vital factor, in which case you need to be able to restore any requests that may have been in the queue and also any requests that had not been handled to completion within Child Processes.
+
+#### Maintaining a Backup of the Queue
+
+*QOper8-cp* does not, itself, provide a resilient queue, but it does provide hooks via which you can optionally provide your own resilience, eg allowing you to maintain an active copy of the queue in a Redis database.  You do this by specifying a property named *QBackup* when instantiating QOper8.  This must be an object containing two functions named *add* and *delete*, eg:
+
+
+      let QBackup = {
+        add: function(id, requestObject) {
+          // your code for saving the requestObject using id as the unique key
+        },
+        delete: function(id) {
+          // your code for deleting the record identified by id as the key
+        }
+      };
+
+      let qoper8 = new QOper8({
+        handlersByMessageType: new Map([
+          ['test', {module: './test.mjs'}]
+        ]),
+        poolSize: 2,
+        handlerTimeout: 60000,
+        QBackup: QBackup
+      });
+
+
+If QBackup methods are defined:
+
+- whenever a message is added to the *QOper8-cp* queue (via either the *send()* or *message()* APIs), the *add()* method will be fired.  This allows you to add a copy of the queued request using a unique request Id that *QOper8-cp* provides you.
+
+- whenever a response is received by *QOper8-cp* from a Child Process, provided this was as a result of the *finished()* method within the Child Process, the *delete()* method is fired, passing you the unique Id of the message that has now completed. This allows you to delete the now-handled message from the copy of the queue.
+
+#### Recovery
+
+If the main Node.js process experiences an unforeseen crash, it is your responsibility to recreate the queue from your backup storage.  To do this, restart *QOper8-cp* and then simply re-queue the messages from your database copy, using, eg, the following pseudo-code:
+
+      for (const requestObject in yourDatabase) {
+
+        // use QOper8's message API to requeue the request object:
+        qoper8.message(requestObject);
+
+        delete requestObject from yourDatabase;
+      }
+
+*QOper8-cp* will immediately begin processing requests as they are added to the queue, and will begin firing your corresponding QBackup *add()* and *delete() methods as the requests are queued and completed, so you should probably shouldn't rebuild the *QOper8-cp* queue directly from your active backup store to prevent any unwanted synchronisation issues within your backup store.
+
+Note that *QOper8-cp*'s approach to resilience means that its throughput is not constrained by the performance of a separate database-based queue.  You should, however, ensure that your storage logic within your *QBackup* *add()* and *delete()* APIs is asynchronous, to avoid blocking *QOper8-cp*'s main process.
+
+Note also that it is your responsibility to ensure the integrity of your backup queue.  *QOper8-cp* can only ensure that you are provided with the correct signals at the appropriate times to allow you to maintain an accurate representation of the currently active queue and uncompleted requests.
+
+Note also that, under the terms of *QOper8-cp*'s Apache2 license, you use *QOper8-cp* at your own risk and no warranties are provided.
+
+
 ## Benchmarking *QOper8-cp* Throughput
 
-To get an idea of the throughput performance of *QOper8-cp* on different browsers, you can use the benchmarking test script that is included in the [*/benchmark*](./benchmark) folder of this repository.
+The performance of *QOper8-cp* will depend on many factors, in particular the size of your request and response objects, and also the amount and complexity of the processing logic within your Child Process Handler methods.  It will also be impacted if your Handler logic includes access to external resources (eg via REST or other external networking APIs).
+
+However, to get an idea of likely best-case throughput performance of *QOper8-cp* on your system, you can use the benchmarking test script that is included in the [*/benchmark*](./benchmark) folder of this repository.
 
 To run it, create a Node.js script file (eg *benchmark.mjs*), following this pattern:
 
@@ -574,11 +762,37 @@ Tweaking the delay time a little more, we should be able to find a better balanc
 
 and you can now see that we're hitting the optimum throughput for this system, which is nearly 6200 messages/sec across 3 Child Processes.  You can see the distribution of messages across the Child Processes which, as you can see, isn't necessarily  an even distribution.
 
+**Note**: You can also use the benchmark tool to stress-test any queue backup logic that you may be providing.  You can also measure what, if any, performance impact your backup strategy has on best-case throughput.
+
+Simply add the *QBackup* APIs to the benchmark's constructor, eg:
+
+        import {benchmark} from 'qoper8-cp/benchmark';
+
+        let QBackup = {
+          add: function(id, requestObject) {
+            // your code for saving the requestObject using id as the unique key
+          },
+          delete: function(id) {
+            // your code for deleting the record identified by id as the key
+          }
+        };
+
+        benchmark({
+          poolSize: 3,
+          maxMessages: 100000,
+          blockLength:1400,
+          delay: 135,
+          QBackup: QBackup
+        });
+
+
+Note that at the end of each benchmark run, your backup queue should be empty!
+
 
 
 ## Optionally Packaging Your Message Handler Code
 
-As you'll have seen above, the default way in which *QOper8-cp* dynamically loads each of your Message Handler script files is via a corresponding URL that you define in the *QOper8-cp* constructor's *handlersByMessageType* property.
+As you'll have seen above, the default way in which *QOper8-cp* dynamically loads each of your Message Handler script files is via a corresponding file path that you define in the *QOper8-cp* constructor's *handlersByMessageType* property.
 
 When a Message Handler Script File is needed by *QOper8-cp*, it dynamically imports it as a module.  This is the standard way to load modules into Child Processes, but of course, it means that each of your Message Handler Script Files need to reside in a file that is fetched via the file path you've specified.
 
