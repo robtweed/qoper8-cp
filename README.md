@@ -398,6 +398,120 @@ It's entirely up to you.  Each Child Process in your pool will be able to invoke
 - If you use just a single Child Process, your queued messages will be handled individually, one at a time, in strict chronological sequence.  This can be advantageous for certain kinds of activity where you need strict control over the serialisation of activities.  The downside is that the overall throughput will be typically less than if you had a larger Child Process pool.
 
 
+## Optional Child Process Initialisation
+
+*Qoper8-cp* initialises Child Processes whenever it starts them up, but only to the extent needed by *QOper8-cp* itself.
+
+Whenever a new *QOper8-cp* Child Process starts up, you may want/need to add your own custom initialisation logic, eg:
+
+- connecting the Child Process to an external resource such as a database;
+- augmenting the *QOper8-cp* Child Process's *this* context (which is then accessible to your message type handlers).  For example, adding methods etc to allow authorised access to an external resource such as a database.
+
+*Qoper8-cp* provides two ways in which you can do this:
+
+- via a *QOper8-cp* property in the *options* object used when instantiating *QOper8-cp*;
+- via a method provided by *QOper8-cp* after it has been instantiated
+
+
+In both cases, you need to provide:
+
+- the path or name of a module that contains your Child Process startup/initialisation logic
+- the specific run-time arguments you want to supply to your startup/initialisation module each time a Child Process is started by *Qoper8-cp*
+
+
+### Structure of a QOper8-cp Startup/Initialisation Module
+  
+A *QOper8-cp* Startup/Initialisation Module should export a function as *{onStartupModule}*, eg:
+
+
+        let onStartupModule = function(props) {
+          props = props || {};
+
+          // augment this, so your custom properties/method are available
+          // to your message type handlers
+
+          this.foo = props.foo;
+          this.bar = props.bar;
+
+          // add any Child Process shutdown logic
+
+          this.on('stop', function() {
+            console.log('Child Process is about to be shut down by QOper8-cp');
+            // perform any resource disconnection/tear-down logic
+          });
+        };
+
+        export {onStartupModule};
+
+Note that the function should take a single argument that can be either a simple scalar value or a complex object.  The structure and content of this argument is up to you to determine.
+
+
+### Using the QOper8 Class Constructor's *options* Object
+
+You provide a sub-object named *onStartup* which has two properties:
+
+- *module*: the path or name of your Startup/Initialisation module (allowing QOper8 to find and import it);
+- *arguments*: the run-time value(s) for your Startup/Initialisation module's argument property/object
+
+For example:
+
+
+        let qoper8 = new QOper8({
+          logging: true,
+          handlersByMessageType: new Map([
+            ['myMessage', {module: './myMessage.mjs'}]
+          ]),
+         
+          onStartup: {
+            module: './myStartupModule.mjs',
+            arguments: {
+              foo: 'foo 123',
+              bar: function() {
+                // my bar function
+              }
+            }
+          }
+
+        });
+
+
+### Using *QOper8-cp*'s *setOnStartupModule()* Method
+
+If you want/need to define the Startup/Initialisation Module after *QOper8-cp* has been instantiated (eg when using a module or framework that looks after the instantiation of *QOper8-cp*), then you can invoke its *setOnStartupModule()* method.  Note that, for security reasons, you can only invoke this function if:
+
+- the *onStartup* option has not already been used when instantiating *QOper8-cp*; and
+- the *setOnStartupModule()* method has not already been invoked
+
+In other words, you can only define your Child Process Startup/Initialisation mechanism once, after which it cannot be changed (eg in a malicious or unauthorised way).
+
+The *setOnStartupModule()* method takes a single argument which is an object with two properties:
+
+- *module*: the path or name of your Startup/Initialisation module (allowing QOper8 to find and import it);
+- *arguments*: the run-time value(s) for your Startup/Initialisation module's argument property/object
+
+For example:
+
+        let qoper8 = new QOper8({
+          logging: true,
+          handlersByMessageType: new Map([
+            ['myMessage', {module: './myMessage.mjs'}]
+          ])
+        });
+
+        // ... then later...
+
+        qoper8.setOnStartupModule({
+          module: './myStartupModule.mjs',
+          arguments: {
+            foo: 'foo 123',
+            bar: function() {
+              // my bar function
+            }
+          }
+        });
+
+
+
 ## *QOper8-cp* Fault Resilience
 
 *QOper8-cp* is designed to be robust and allow you to control and handle unforseen events.
