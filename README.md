@@ -398,7 +398,7 @@ It's entirely up to you.  Each Child Process in your pool will be able to invoke
 - If you use just a single Child Process, your queued messages will be handled individually, one at a time, in strict chronological sequence.  This can be advantageous for certain kinds of activity where you need strict control over the serialisation of activities.  The downside is that the overall throughput will be typically less than if you had a larger Child Process pool.
 
 
-## Optional Child Process Initialisation
+## Optional Child Process Initialisation/Customisation
 
 *Qoper8-cp* initialises Child Processes whenever it starts them up, but only to the extent needed by *QOper8-cp* itself.
 
@@ -407,11 +407,12 @@ Whenever a new *QOper8-cp* Child Process starts up, you may want/need to add you
 - connecting the Child Process to an external resource such as a database;
 - augmenting the *QOper8-cp* Child Process's *this* context (which is then accessible to your message type handlers).  For example, adding methods etc to allow authorised access to an external resource such as a database.
 
-*Qoper8-cp* provides two ways in which you can do this:
+**NOTE**: Although your Message Type Handlers have access to the *QOper8-cp this* context, for security reasons, they cannot make any changes to *this* that will persist between Handler invocations.  
+
+*Qoper8-cp* provides two ways in which you can customise Child Processes:
 
 - via a *QOper8-cp* property in the *options* object used when instantiating *QOper8-cp*;
 - via a method provided by *QOper8-cp* after it has been instantiated
-
 
 In both cases, you need to provide:
 
