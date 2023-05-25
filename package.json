@@ -1,8 +1,8 @@
 {
   "name": "qoper8-cp",
-  "version": "4.2.3",
+  "version": "4.2.4",
   "config": {
-    "date": "15 September 2022"
+    "date": "25 May 2023"
   },
   "description": "Child Process Pool Management Utility for Node.js",
   "main": "./src/QOper8.js",
@@ -20,7 +20,7 @@
     "type": "git",
     "url": "git+https://github.com/robtweed/qoper8-cp.git"
   },
-  "author": "Rob Tweed, M/Gateway Developments Ltd",
+  "author": "Rob Tweed, MGateway Ltd",
   "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/robtweed/qoper8-cp/issues"

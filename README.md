@@ -1,7 +1,7 @@
 # QOper8-cp: Queue-based Node.js Child Process Pool Manager
  
 Rob Tweed <rtweed@mgateway.com>  
-16 August 2022, M/Gateway Developments Ltd [http://www.mgateway.com](http://www.mgateway.com)  
+25 May 2023, MGateway Ltd [https://www.mgateway.com](https://www.mgateway.com)  
 
 Twitter: @rtweed
 
@@ -1113,11 +1113,11 @@ The trick to making use of such intermediate messages within the main *QOper8-cp
 
 ## License
 
- Copyright (c) 2022 M/Gateway Developments Ltd,                           
+ Copyright (c) 2023 MGateway Ltd,                           
  Redhill, Surrey UK.                                                      
  All rights reserved.                                                     
                                                                            
-  http://www.mgateway.com                                                  
+  https://www.mgateway.com                                                  
   Email: rtweed@mgateway.com                                               
                                                                            
                                                                            

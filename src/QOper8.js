@@ -2,11 +2,11 @@
  ----------------------------------------------------------------------------
  | QOper8-cp: Queue-based Node.js Child Process Pool Manager                 |
  |                                                                           |
- | Copyright (c) 2022 M/Gateway Developments Ltd,                            |
+ | Copyright (c) 2023 MGateway Ltd,                                          |
  | Redhill, Surrey UK.                                                       |
  | All rights reserved.                                                      |
  |                                                                           |
- | http://www.mgateway.com                                                   |
+ | https://www.mgateway.com                                                  |
  | Email: rtweed@mgateway.com                                                |
  |                                                                           |
  |                                                                           |
