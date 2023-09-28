@@ -13,7 +13,7 @@ let q = new QOper8({
   workerInactivityLimit: 2,
   handlersByMessageType: new Map([
     //['test', {text: fnText}]
-    ['test', {module: './testHandler.mjs'}]
+    ['test', {module: 'testHandler.mjs'}]
   ])
 });
 

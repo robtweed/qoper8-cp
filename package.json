@@ -1,15 +1,15 @@
 {
   "name": "qoper8-cp",
-  "version": "4.2.4",
+  "version": "5.0.0",
   "config": {
-    "date": "25 May 2023"
+    "date": "26 September 2023"
   },
   "description": "Child Process Pool Management Utility for Node.js",
   "main": "./src/QOper8.js",
   "type": "module",
   "exports": {
     ".": "./src/QOper8.js",
-    "./benchmark": "./benchmark/qoper8-cp-benchmark.js"
+    "./benchmark": "./benchmark/qoper8-cp-benchmark.mjs"
   },
   "engines" : {
     "node" : ">=14.0.0"

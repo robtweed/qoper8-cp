@@ -10,13 +10,13 @@ Google Group for discussions, support, advice etc: [http://groups.google.co.uk/g
 
 ## What is QOper8-cp?
 
-*QOper8-cp* is a Node.js/JavaScript Module that provides a simple yet powerful way to use and manage Child Processes in your
-Node.js applications.
+*QOper8-cp* is a JavaScript Module that provides a simple yet powerful way to use and manage Child Processes in your
+Node.js or Bun.js applications.
 
 *QOper8-cp* allows you to define a pool of Child Processes, to which messages that you create are automatically
 dispatched and handled.  *QOper8-cp* manages the Child Process pool for you automatically, bringing them into play and closing them down based on demand.  *QOper8-cp* allows you to determine how long a Child Process process will persist.
 
-*Qoper8-cp* makes use of the standard Node.js Child Process APIs, and uses its standard *send()* API for communication between the main QOper8 process and each Child Process.  No other networking APIs or technologies are involved, and no external network traffic is conducted within *QOper8-cp*'s logic.
+*Qoper8-cp* makes use of the standard Node.js or Bun.js Child Process APIs, and uses its standard *send()* API for communication between the main QOper8 process and each Child Process.  No other networking APIs or technologies are involved, and no external network traffic is conducted within *QOper8-cp*'s logic.
 
 *Note*: The *QOper8-cp* module closely follows the pattern and APIs of the 
 [*QOper8-wt*](https://github.com/robtweed/qoper8-wt) Worker Thread pool manager and also the browser-based 
@@ -60,7 +60,7 @@ You start and configure *QOper8-cp* by creating an instance of the *QOper8* clas
 
 - *maxPoolSize*: It is possible to modify the poolSize of a running *QOper8-cp* system (see later), but you may want to set a cap on what is possible.  This *maxPoolSize* option allows you to do this.  If not specified, a value of 32 is used.
 
-- *workerModulePath*: Every time *QOper8-cp* is instantiated, it creates a file containing its Worker processing logic (named *QOper8Worker.js*).  You can specify the file path that it will use for this file.  By default it is written to the current working directory (ie the directory in which you are running your Node.js script file);
+- *workerModulePath*: Every time *QOper8-cp* is instantiated, it creates a file containing its Worker processing logic (named *QOper8Worker.js*).  You can specify the file path that it will use for this file.  By default it is written to the current working directory (ie the directory in which you are running your Node.js or Bun.js script file);
 
 - *handlersByMessageType*: a JavaScript Map of each message type to its respective handler method module URL.  Message types can be any string value.  See later on how to use this Map.
 
@@ -72,7 +72,7 @@ You start and configure *QOper8-cp* by creating an instance of the *QOper8* clas
 
 - *handlerTimeout*: Optional property allowing you to specify the length of time (in milliseconds) that the QOper8 main process will wait for a response from a Child Process.  If a *handlerTimeout* is specified and it is exceeded (eg due to a handler method going wrong), then an error is returned and the Child Process is shut down.  See later for details.
 
-- *QBackup*: optional object that includes two functions for maintaining a backup queue (eg in a Redis key/value store), for critical systems where the resilience of the queue needs to be assured in the event of the main Node.js process crashing.  See later for details.
+- *QBackup*: optional object that includes two functions for maintaining a backup queue (eg in a Redis key/value store), for critical systems where the resilience of the queue needs to be assured in the event of the main Node.js or Bun.js process crashing.  See later for details.
 
 You can optionally modify the parameters used by *QOper8-cp* for monitoring and shutting down inactive Child Process processes, by using the following *options* properties:
 
@@ -87,7 +87,7 @@ For example:
         poolSize: 2,
         logging: true,
         handlersByMessageType: new Map([
-         ['test', {module: './testHandler.mjs'}]
+         ['test', {module: 'testHandler.mjs'}]
         ]),
         workerInactivityLimit: 5
       });
@@ -251,7 +251,7 @@ Simply write your message handlers, tell *QOper8-cp* where to load them from and
 
 This simple example creates a pool of just a single Child Process (the default configuration) and allows you to process a message of type *myMessage*
 
-First, let's define the Message Handler Script file.  We'll use the example above.  Note that, since it needs to be handled as a Module by Node.js, you should specify a file extension of *.mjs*:
+First, let's define the Message Handler Script file.  We'll use the example above.  Note that, since it needs to be handled as a Module by Node.js, you should specify a file extension of *.mjs*  (If you are using Bun.js then you can use either a *.js* or *.mjs* file extension):
 
 ### myMessage.mjs
 
@@ -269,7 +269,8 @@ First, let's define the Message Handler Script file.  We'll use the example abov
       export {handler};
 
 
-Now define our main Node.js script file.  Note the mapping of the *myMessage* type to the *myMessage.js* handler module.  Once again, use a file extension of *.mjs*:
+Now define our main Node.js or Bun.js script file.  Note the mapping of the *myMessage* type to the *myMessage.js* handler module.  Once again, use a file extension of *.mjs* if you are using Node.js.  Handler module file paths are relative to the
+current working directory - ie the directory from which you started *app.mjs*.:
 
 ### app.mjs
 
@@ -280,7 +281,7 @@ Now define our main Node.js script file.  Note the mapping of the *myMessage* ty
         let qoper8 = new QOper8({
           logging: true,
           handlersByMessageType: new Map([
-            ['myMessage', {module: './myMessage.mjs'}]
+            ['myMessage', {module: 'myMessage.mjs'}]
           ]),
           workerInactivityLimit: 2
         });
@@ -302,6 +303,10 @@ Now define our main Node.js script file.  Note the mapping of the *myMessage* ty
 Load and run this module:
 
         node app.mjs
+
+or
+
+        bun app.js
 
 
 You should see the *console.log()* messages generated at each step by *QOper8-cp* as it processes the queued message, eg:
@@ -365,7 +370,7 @@ If you now leave the web page alone, you'll see the messages generated when it p
         $
 
 
-Alternatively, you can shut down the Node.js process by typing *CTRL & C*, in which case you'll see *QOper8-cp* gracefully terminating the Child Processes before shutting itself down, eg:
+Alternatively, you can shut down the Node.js or Bun.js process by typing *CTRL & C*, in which case you'll see *QOper8-cp* gracefully terminating the Child Processes before shutting itself down, eg:
 
         ^C1660638577024: *** CTRL & C detected: shutting down gracefully...
         1660638577026: Child Process 0 is being stopped
@@ -393,7 +398,7 @@ It's entirely up to you.  Each Child Process in your pool will be able to invoke
 
 - A *QOper8-cp* Child process only handles a single message at a time.  The Child Process is not available again until it invokes the *finished()* method within your handler.
 
-- You'll find that overall throughput will initially increase as you add more Child Processes to your pool, but you'll then find that throughput will start to decrease as you further increase the pool.  It will depend on a number of factors, but primarily the number of CPU cores available on the machine running Node.js and *QOper8-cp*.  Typically optimal throughput is achieved with between 3 and 7 Child Processes.
+- You'll find that overall throughput will initially increase as you add more Child Processes to your pool, but you'll then find that throughput will start to decrease as you further increase the pool.  It will depend on a number of factors, but primarily the number of CPU cores available on the machine running Node.js/Bun.js and *QOper8-cp*.  Typically optimal throughput is achieved with between 3 and 7 Child Processes.
 
 - If you use just a single Child Process, your queued messages will be handled individually, one at a time, in strict chronological sequence.  This can be advantageous for certain kinds of activity where you need strict control over the serialisation of activities.  The downside is that the overall throughput will be typically less than if you had a larger Child Process pool.
 
@@ -460,11 +465,11 @@ For example:
         let qoper8 = new QOper8({
           logging: true,
           handlersByMessageType: new Map([
-            ['myMessage', {module: './myMessage.mjs'}]
+            ['myMessage', {module: 'myMessage.mjs'}]
           ]),
          
           onStartup: {
-            module: './myStartupModule.mjs',
+            module: 'myStartupModule.mjs',
             arguments: {
               foo: 'foo 123',
               bar: function() {
@@ -495,14 +500,14 @@ For example:
         let qoper8 = new QOper8({
           logging: true,
           handlersByMessageType: new Map([
-            ['myMessage', {module: './myMessage.mjs'}]
+            ['myMessage', {module: 'myMessage.mjs'}]
           ])
         });
 
         // ... then later...
 
         qoper8.setOnStartupModule({
-          module: './myStartupModule.mjs',
+          module: 'myStartupModule.mjs',
           arguments: {
             foo: 'foo 123',
             bar: function() {
@@ -564,7 +569,7 @@ To handle such situations, you should specify a *handlerTimeout* when instantiat
 
       let qoper8 = new QOper8({
         handlersByMessageType: new Map([
-          ['test', {module: './test.mjs'}]
+          ['test', {module: 'test.mjs'}]
         ]),
         poolSize: 2,
         handlerTimeout: 60000
@@ -598,9 +603,9 @@ and the *test* Message Handler method failed to respond within a minute, then th
   Note that *QOper8-cp* will always automatically start new Child Processes if it needs to, and this, coupled with the fact that a *QOper8-cp* Child Process only ever handles a single message at a time, means that shutting down Child Processes is a safe thing for *QOper8-cp* to do.
 
 
-### Handling a Crash in the Main Node.js Process
+### Handling a Crash in the Main Node.js/Bun.js Process
 
-If the main Node.js process experiences an unforeseen crash, you will not only lose the currently executing Child Processes, but you'll also lose *QOper8-cp*'s queue since, for performance reasons, it is an in-memory array structure.
+If the main Node.js or  Bun.js process experiences an unforeseen crash, you will not only lose the currently executing Child Processes, but you'll also lose *QOper8-cp*'s queue since, for performance reasons, it is an in-memory array structure.
 
 Under most circumstances, the *QOper8-cp* queue should be empty, but in a busy system this may not be the case, and if you are running a safety-critical system, the resilience of the queue may be an important/vital factor, in which case you need to be able to restore any requests that may have been in the queue and also any requests that had not been handled to completion within Child Processes.
 
@@ -620,7 +625,7 @@ Under most circumstances, the *QOper8-cp* queue should be empty, but in a busy s
 
       let qoper8 = new QOper8({
         handlersByMessageType: new Map([
-          ['test', {module: './test.mjs'}]
+          ['test', {module: 'test.mjs'}]
         ]),
         poolSize: 2,
         handlerTimeout: 60000,
@@ -636,7 +641,7 @@ If QBackup methods are defined:
 
 #### Recovery
 
-If the main Node.js process experiences an unforeseen crash, it is your responsibility to recreate the queue from your backup storage.  To do this, restart *QOper8-cp* and then simply re-queue the messages from your database copy, using, eg, the following pseudo-code:
+If the main Node.js or Bun.js process experiences an unforeseen crash, it is your responsibility to recreate the queue from your backup storage.  To do this, restart *QOper8-cp* and then simply re-queue the messages from your database copy, using, eg, the following pseudo-code:
 
       for (const requestObject in yourDatabase) {
 
@@ -661,7 +666,7 @@ The performance of *QOper8-cp* will depend on many factors, in particular the si
 
 However, to get an idea of likely best-case throughput performance of *QOper8-cp* on your system, you can use the benchmarking test script that is included in the [*/benchmark*](./benchmark) folder of this repository.
 
-To run it, create a Node.js script file (eg *benchmark.mjs*), following this pattern:
+To run it, create a Node.js or Bun.js script file (eg *benchmark.mjs*), following this pattern:
 
         import {benchmark} from 'QOper8-cp/benchmark';
 
@@ -911,7 +916,7 @@ As you'll have seen above, the default way in which *QOper8-cp* dynamically load
 
 When a Message Handler Script File is needed by *QOper8-cp*, it dynamically imports it as a module.  This is the standard way to load modules into Child Processes, but of course, it means that each of your Message Handler Script Files need to reside in a file that is fetched via the file path you've specified.
 
-This approach is OK, but you may want to create a single Node.js file that includes all your logic, including that of your Worker Message Handler scripts.
+This approach is OK, but you may want to create a single Node.js or Bun.js file that includes all your logic, including that of your Worker Message Handler scripts.
 
 *QOper8-cp* therefore provides an alternative way to define and specify your type-specific Message Handlers by creating a string that contains just the processing code.  
 
@@ -983,7 +988,7 @@ Pulling this together, let's repackage the earlier example:
         console.log(JSON.stringify(res, null, 2));
 
 
-So you now have everything defined in a single Node.js script file.
+So you now have everything defined in a single Node.js or Bun.js script file.
 
 
 
