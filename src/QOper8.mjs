@@ -48,8 +48,8 @@ class QOper8 {
     if (obj.workerInactivityLimit) obj.workerInactivityLimit = obj.workerInactivityLimit * 60000;
 
     this.name = 'QOper8-cp';
-    this.build = '5.0';
-    this.buildDate = '28 September 2023';
+    this.build = '5.1';
+    this.buildDate = '29 September 2023';
     this.logging = obj.logging || false;
     let poolSize = +obj.poolSize || 1;
     let maxPoolSize = obj.maxPoolSize || 32;

@@ -23,7 +23,7 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-26 September 2023
+29 September 2023
 
 */
 
@@ -55,6 +55,8 @@ let QWorker = class {
     let lastActivityAt = Date.now();
     let noOfMessages = 0;
     let q = this;
+    let cwd = process.cwd();
+    this.cwd = cwd;
 
     let shutdown = function() {
       // signal to master process that I'm to be shut down
@@ -174,9 +176,9 @@ let QWorker = class {
         if (obj.qoper8.onStartupModule) {
           let mod;
           try {
-            let {onStartupModule} = await import(path.resolve(process.cwd(), obj.qoper8.onStartupModule));
+            let {onStartupModule} = await import(path.resolve(cwd, obj.qoper8.onStartupModule));
             mod = onStartupModule;
-            q.log('onStartup Customisation module loaded: ' + path.resolve(process.cwd(), obj.qoper8.onStartupModule));
+            q.log('onStartup Customisation module loaded: ' + path.resolve(cwd, obj.qoper8.onStartupModule));
           }
           catch(err) {
             error = 'Unable to load onStartup customisation module ' + obj.qoper8.onStartupModule;
@@ -197,7 +199,12 @@ let QWorker = class {
           // onStartup customisation module loaded: now invoke it
 
           try {
-            mod.call(q, obj.qoper8.onStartupArguments);
+            if (mod.constructor.name === 'AsyncFunction') {
+              await mod.call(q, obj.qoper8.onStartupArguments);
+            }
+            else {
+              mod.call(q, obj.qoper8.onStartupArguments);
+            }
           }
           catch(err) {
             error = 'Error running onStartup customisation module ' + obj.qoper8.onStartupModule;
@@ -300,7 +307,7 @@ let QWorker = class {
           }
           else if (handlerObj.module) {
             try {
-              let modulePath = handlerObj.path || process.cwd();
+              let modulePath = handlerObj.path || cwd;
               let {handler} = await import(path.resolve(modulePath, handlerObj.module));
               handlers.set(obj.type, handler);
               q.log('Handler module imported into Worker ' + id + ': ' + path.resolve(modulePath, handlerObj.module));
@@ -328,8 +335,14 @@ let QWorker = class {
         let handler = handlers.get(obj.type);
         try {
           let ctx = {...q};
+          if (q.mgdbx) ctx.mgdbx = q.mgdbx;  // to provide mgdbx container cacheing
           ctx.id = id;
-          handler.call(ctx, obj, finished);
+          if (handler.constructor.name === 'AsyncFunction') {
+            await handler.call(ctx, obj, finished);
+          }
+          else {
+            handler.call(ctx, obj, finished);
+          }
         }
         catch(err) {
           error = 'Error running Handler Method for type ' + obj.type;
