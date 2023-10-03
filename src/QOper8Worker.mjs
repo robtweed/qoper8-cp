@@ -23,7 +23,7 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-29 September 2023
+1 October 2023
 
 */
 
@@ -50,6 +50,7 @@ let QWorker = class {
     let uuid = false;
     let delay = 60000;
     let inactivityLimit = 180000;
+    let cacheExpiryTime = 10 * 60000;
     let handlersByMessageType = new Map();
     let timer = false;
     let lastActivityAt = Date.now();
@@ -57,6 +58,7 @@ let QWorker = class {
     let q = this;
     let cwd = process.cwd();
     this.cwd = cwd;
+    this.cache = new Map();
 
     let shutdown = function() {
       // signal to master process that I'm to be shut down
@@ -87,6 +89,19 @@ let QWorker = class {
       }
     }
 
+    this.use = function() {
+      if (!q.mgdbx) return;
+      let args = [...arguments];
+      let key = args.toString();
+      if (!q.cache.has(key)) {
+        q.cache.set(key, {
+          container: new q.mgdbx.mglobal(q.mgdbx.db, ...args),
+          at: Date.now()
+        });
+      }
+      return q.cache.get(key).container;
+    };
+
     this.send = function(msg) {
       process.send(msg);
     };
@@ -98,7 +113,11 @@ let QWorker = class {
 
     let startTimer = function() {
       timer = setInterval(function() {
-        let inactiveFor = Date.now() - lastActivityAt;
+        // check cache expiry
+
+        let now = Date.now();
+
+        let inactiveFor = now - lastActivityAt;
         q.log('Worker ' + id + ' inactive for ' + inactiveFor);
         q.log('Inactivity limit: ' + inactivityLimit);
         if (inactiveFor > inactivityLimit) {
@@ -111,6 +130,15 @@ let QWorker = class {
             shutdown();
           }
         }
+        // delete cached containers that have been around too long
+
+        q.cache.forEach((value, key, map) => {
+          let time = now - value.at;
+          if (time > cacheExpiryTime) {
+            map.delete(key);
+          }
+        });
+
       }, delay);
     }
 
@@ -173,15 +201,16 @@ let QWorker = class {
           });
         }
 
-        if (obj.qoper8.onStartupModule) {
+        if (obj.qoper8.onStartup) {
           let mod;
+          let modPath = obj.qoper8.onStartup.path || cwd;
           try {
-            let {onStartupModule} = await import(path.resolve(cwd, obj.qoper8.onStartupModule));
+            let {onStartupModule} = await import(path.resolve(modPath, obj.qoper8.onStartup.module));
             mod = onStartupModule;
-            q.log('onStartup Customisation module loaded: ' + path.resolve(cwd, obj.qoper8.onStartupModule));
+            q.log('onStartup Customisation module loaded: ' + path.resolve(modPath, obj.qoper8.onStartup.module));
           }
           catch(err) {
-            error = 'Unable to load onStartup customisation module ' + obj.qoper8.onStartupModule;
+            error = 'Unable to load onStartup customisation module ' + obj.qoper8.onStartup.module;
             q.log(error);
             q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
             q.emit('error', {
@@ -197,17 +226,17 @@ let QWorker = class {
           }
 
           // onStartup customisation module loaded: now invoke it
-
+          let modArgs = obj.qoper8.onStartup.arguments || {};
           try {
             if (mod.constructor.name === 'AsyncFunction') {
-              await mod.call(q, obj.qoper8.onStartupArguments);
+              await mod.call(q, modArgs);
             }
             else {
-              mod.call(q, obj.qoper8.onStartupArguments);
+              mod.call(q, modArgs);
             }
           }
           catch(err) {
-            error = 'Error running onStartup customisation module ' + obj.qoper8.onStartupModule;
+            error = 'Error running onStartup customisation module ' + obj.qoper8.onStartup.module;
             q.log(error);
             q.log(JSON.stringify(err, Object.getOwnPropertyNames(err)));
             q.emit('error', {
@@ -227,6 +256,7 @@ let QWorker = class {
         uuid = obj.qoper8.uuid;
         if (obj.qoper8.workerInactivityCheckInterval) delay = obj.qoper8.workerInactivityCheckInterval; 
         if (obj.qoper8.workerInactivityLimit) inactivityLimit = obj.qoper8.workerInactivityLimit; 
+        if (obj.qoper8.cacheExpiryTime) cacheExpiryTime = obj.qoper8.cacheExpiryTime; 
         if (obj.qoper8.handlersByMessageType) {
           handlersByMessageType = obj.qoper8.handlersByMessageType;
         }
@@ -334,8 +364,8 @@ let QWorker = class {
         noOfMessages++;
         let handler = handlers.get(obj.type);
         try {
-          let ctx = {...q};
-          if (q.mgdbx) ctx.mgdbx = q.mgdbx;  // to provide mgdbx container cacheing
+          let ctx = {...q};  // protect the QOper8 object from being changed in a handler 
+          ctx.cache = q.cache;  // to provide mgdbx container cacheing between invocations of handler
           ctx.id = id;
           if (handler.constructor.name === 'AsyncFunction') {
             await handler.call(ctx, obj, finished);

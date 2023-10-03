@@ -12,7 +12,9 @@ let benchmark = function(options) {
   let maxQLength = +options.maxQLength || 20000;
   let logging = options.logging || false;
 
-  let q = new QOper8({
+  let message = options.message;
+
+  let qOptions = {
     logging: logging,
     maxQLength: maxQLength,
     workerInactivityLimit: 2,
@@ -24,7 +26,17 @@ let benchmark = function(options) {
     ]),
     poolSize: poolSize,
     exitOnStop: true
-  });
+  };
+
+  if (options.handlers) {
+    for (let type in options.handlers) {
+      qOptions.handlersByMessageType.set(type, options.handlers[type]);
+    }
+  }
+
+  if (options.mgdbx) qOptions.mgdbx = options.mgdbx;
+
+  let q = new QOper8(qOptions)
 
   let msgNo = 0;
   let batchNo = 0;
@@ -77,11 +89,17 @@ let benchmark = function(options) {
       for (let i = 0; i < blockLength; i++) {
         msgNo++;
         if (msgNo > maxMessages) break;
-        let msg = {
-          type: 'benchmark',
-          messageNo: msgNo,
-          time: Date.now()
-        };
+        let msg;
+        if (message) {
+          msg = {...message};
+        }
+        else {
+          msg = {
+            type: 'benchmark',
+            messageNo: msgNo,
+            time: Date.now()
+          };
+        }
         q.message(msg, function(res, workerId) {
           responseNo++;
           handleResponse(res, responseNo, workerId);

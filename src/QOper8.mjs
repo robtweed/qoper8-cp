@@ -23,7 +23,7 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-26 September 2023
+1 October 2023
 
 */
 
@@ -48,19 +48,28 @@ class QOper8 {
     if (obj.workerInactivityLimit) obj.workerInactivityLimit = obj.workerInactivityLimit * 60000;
 
     this.name = 'QOper8-cp';
-    this.build = '5.1';
-    this.buildDate = '29 September 2023';
+    this.build = '5.2';
+    this.buildDate = '1 October 2023';
     this.logging = obj.logging || false;
     let poolSize = +obj.poolSize || 1;
     let maxPoolSize = obj.maxPoolSize || 32;
     if (poolSize > maxPoolSize) poolSize = maxPoolSize;
     let inactivityCheckInterval = obj.workerInactivityCheckInterval || 60000;
     let inactivityLimit = obj.workerInactivityLimit || (20 * 60000);
+    let cacheExpiryTime = obj.cacheExpiryTime || (10 * 60000);
     let handlerTimeout = obj.handlerTimeout || false;
     let handlerTimers = new Map();
-    let onStartup = obj.onStartup || {};
-    let onStartupModule = onStartup.module;
-    let onStartupArguments = onStartup.arguments;
+    let onStartup = obj.onStartup || false;
+    //let onStartupModule = onStartup.module;
+    //let onStartupArguments = onStartup.arguments;
+
+    if (obj.mgdbx) {
+      onStartup = {
+        module: 'mgdbx-worker-startup.mjs',
+        path: __dirname,
+        arguments: obj.mgdbx
+      }
+    }
 
     // QBackup, if present, must be an object
     //  with two functions: add and remove
@@ -89,8 +98,9 @@ class QOper8 {
       // should be an object:  {module: '/path/to/module', arguments: {key1: value1, ...etc} }
       if (!onStartupModule) {
         obj = obj || {};
-        onStartupModule = obj.module;
-        onStartupArguments = obj.arguments;
+        onStartup = obj;
+        //onStartupModule = obj.module;
+        //onStartupArguments = obj.arguments;
       }
     }
 
@@ -382,9 +392,9 @@ class QOper8 {
           handlersByMessageType: q.handlersByMessageType,
           workerInactivityCheckInterval: inactivityCheckInterval,
           workerInactivityLimit: inactivityLimit,
+          cacheExpiryTime: cacheExpiryTime,
           logging: q.logging,
-          onStartupModule: onStartupModule,
-          onStartupArguments: onStartupArguments
+          onStartup: onStartup
         }
       };
       sendMessage(msg, worker);
