@@ -23,7 +23,7 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-1 October 2023
+26 October 2023
 
 */
 
@@ -88,19 +88,6 @@ let QWorker = class {
         shutdown();
       }
     }
-
-    this.use = function() {
-      if (!q.mgdbx) return;
-      let args = [...arguments];
-      let key = args.toString();
-      if (!q.cache.has(key)) {
-        q.cache.set(key, {
-          container: new q.mgdbx.mglobal(q.mgdbx.db, ...args),
-          at: Date.now()
-        });
-      }
-      return q.cache.get(key).container;
-    };
 
     this.send = function(msg) {
       process.send(msg);
@@ -201,6 +188,8 @@ let QWorker = class {
           });
         }
 
+        logging = obj.qoper8.logging;
+
         if (obj.qoper8.onStartup) {
           let mod;
           let modPath = obj.qoper8.onStartup.path || cwd;
@@ -261,7 +250,6 @@ let QWorker = class {
           handlersByMessageType = obj.qoper8.handlersByMessageType;
         }
 
-        logging = obj.qoper8.logging;
         startTimer();
         q.log('new worker ' + id + ' started...');
         q.emit('started', {id: id});
@@ -365,7 +353,7 @@ let QWorker = class {
         let handler = handlers.get(obj.type);
         try {
           let ctx = {...q};  // protect the QOper8 object from being changed in a handler 
-          ctx.cache = q.cache;  // to provide mgdbx container cacheing between invocations of handler
+          //ctx.cache = q.cache;  // to provide mgdbx container cacheing between invocations of handler
           ctx.id = id;
           if (handler.constructor.name === 'AsyncFunction') {
             await handler.call(ctx, obj, finished);

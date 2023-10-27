@@ -23,14 +23,14 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-1 October 2023
+26 October 2023
 
 */
 
 import { fork } from 'node:child_process';
 import * as fs from 'node:fs';
 import deq from 'double-ended-queue';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -127,7 +127,7 @@ class QOper8 {
       return queue.length;
     };
 
-    let uuid = uuidv4();
+    let uuid = randomUUID();
     let workers = new Map();
     let isAvailable = new Map();
     let pendingRequests = new Map();

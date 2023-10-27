@@ -24,13 +24,17 @@
  |  limitations under the License.                                           |
  ----------------------------------------------------------------------------
 
-29 September 2023
+26 October 2023
 
 */
 
 import {server, mglobal, mclass} from 'mg-dbx-napi';
+import {glsDB} from 'glsdb';
 
 const onStartupModule = function(args) {
+  let type = args.type;
+  this.cache = new Map();
+  let q = this;
   let db = new server();
   let opened = false;
   if (args && args.open) {
@@ -40,10 +44,31 @@ const onStartupModule = function(args) {
       mglobal: mglobal,
       mclass: mclass
     };
+
+    this.use = function() {
+      let args = [...arguments];
+      let key = args.toString();
+      if (!q.cache.has(key)) {
+        q.cache.set(key, {
+          container: new mglobal(db, ...args),
+          at: Date.now()
+        });
+      }
+      return q.cache.get(key).container;
+    };
+
+    this.glsdb = new glsDB({
+      type: type,
+      db: db,
+      mglobal: mglobal,
+      mclass: mclass,
+      use: this.use
+    });
+
     opened = true;
   }
   this.on('stop', function() {
-    console.log('Worker is about to be shut down by QOper8');
+    q.log('Worker is about to be shut down by QOper8');
     if (opened) db.close();
   });
 };
