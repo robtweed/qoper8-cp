@@ -56,10 +56,10 @@ let benchmark = function(options) {
         let rate = maxMessages / elapsed;
         console.log('===========================');
         console.log(' ');
-        console.log(responseNo + ' messages: ' + elapsed + ' sec');
-        console.log('Processing rate: ' + rate + ' message/sec');
+        console.log(responseNo.toLocaleString() + ' messages: ' + elapsed.toLocaleString() + ' sec');
+        console.log('Processing rate: ' + rate.toLocaleString() + ' message/sec');
         for (let id = 0; id < poolSize; id++) {
-          console.log('Child Process ' + id + ': ' + messageCountByWorker[id] + ' messages handled');
+          console.log('Child Process ' + id + ': ' + messageCountByWorker[id].toLocaleString() + ' messages handled');
         }
         console.log(' ');
         console.log('===========================');
@@ -75,13 +75,13 @@ let benchmark = function(options) {
       // Check what's already in the queue
       let queueLength = q.getQueueLength();
       if (queueLength > maxQueueLength) {
-        console.log('Block no: ' + batchNo + ' (' + msgNo + '): queue length increased to ' + queueLength);
+        console.log('Block no: ' + batchNo + ' (' + msgNo.toLocaleString() + '): queue length increased to ' + queueLength.toLocaleString());
         maxQueueLength = queueLength;
         delay++;
         console.log('delay increased to ' + delay);
       }
       if (queueLength === 0) {
-        console.log('Block no: ' + batchNo + ' (' + msgNo + '): Queue exhausted');
+        console.log('Block no: ' + batchNo + ' (' + msgNo.toLocaleString() + '): Queue exhausted');
         delay--;
         console.log('delay reduced to ' + delay);
       }

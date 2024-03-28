@@ -28,7 +28,7 @@
 
 */
 
-import {server, mglobal, mclass} from 'mg-dbx-napi';
+import {server, mglobal, mclass, mcursor} from 'mg-dbx-napi';
 import {glsDB} from 'glsdb';
 
 const onStartupModule = function(args) {
@@ -42,7 +42,8 @@ const onStartupModule = function(args) {
     this.mgdbx = {
       db: db,
       mglobal: mglobal,
-      mclass: mclass
+      mclass: mclass,
+      mcursor: mcursor
     };
 
     this.use = function() {
@@ -62,6 +63,7 @@ const onStartupModule = function(args) {
       db: db,
       mglobal: mglobal,
       mclass: mclass,
+      mcursor: mcursor,
       use: this.use
     });
 
